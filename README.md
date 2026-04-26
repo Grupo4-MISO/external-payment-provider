@@ -52,7 +52,7 @@ Además de los 3 campos iniciales, conviene incluir:
 - `webhook_secret`: permite firmar el webhook y validar autenticidad.
 - `customer_id`: útil para trazabilidad.
 - `metadata`: datos adicionales del negocio (ej. `booking_id`, `channel`).
-- `simulate_outcome`: controlar resultado en pruebas (`approved`, `rejected`, `error`, `random`).
+- `simulate_outcome`: controlar resultado en pruebas (`success`, `failed`, `error`, `random`).
 - `callback_delay_seconds`: simular latencia de procesamiento.
 
 ### Ejemplo request
@@ -102,7 +102,7 @@ Luego del procesamiento interno, el servicio envía `POST` al `webhook_url` con 
 	"event": "payment_result",
 	"payment_id": "pay_1001",
 	"external_payment_id": "ext_4fe9a3b941a64216",
-	"status": "approved",
+	"status": "success",
 	"amount": "120000.50",
 	"currency": "COP",
 	"processed_at": "2026-04-21T16:00:03.000000+00:00",
@@ -124,7 +124,7 @@ Luego del procesamiento interno, el servicio envía `POST` al `webhook_url` con 
 ### Campos recomendados en webhook
 Sí, conviene agregar al menos:
 - `event`: para distinguir tipos de notificación.
-- `status`: estado final (`approved`, `rejected`, `error`).
+- `status`: estado final (`success`, `failed`, `error`).
 - `reason_code`: motivo estandarizado para rechazos/errores.
 - `processed_at`: auditoría y orden de eventos.
 - `external_payment_id` y `payment_id`: correlación entre sistemas.
@@ -132,7 +132,54 @@ Sí, conviene agregar al menos:
 ## Comportamiento de simulación
 - Genera `external_payment_id` aleatorio con prefijo `ext_`.
 - Simula resultado con distribución por defecto:
-	- `approved`: 75%
-	- `rejected`: 20%
+	- `success`: 75%
+	- `failed`: 20%
 	- `error`: 5%
 - Reintenta envío de webhook hasta 3 veces en caso de error temporal.
+
+## Flujo de checkout con página web
+
+Para simular la experiencia completa de redirección y confirmación de pago, el servicio también expone un flujo de sesión:
+
+### `POST /payment-sessions`
+
+Crea una sesión de checkout y devuelve una URL para redirigir al usuario.
+
+### Entrada
+Usa el mismo body de `POST /payments`.
+
+### Respuesta
+
+```json
+{
+	"session_id": "ps_4fe9a3b941a64216",
+	"payment_id": "pay_1001",
+	"checkout_url": "http://localhost:8086/checkout/ps_4fe9a3b941a64216",
+	"status": "created",
+	"created_at": "2026-04-25T16:00:00.000000+00:00"
+}
+```
+
+### `GET /checkout/{session_id}`
+
+Renderiza la página de pago simulada donde el usuario ve el resumen y confirma su correo electrónico.
+
+### `GET /payment-sessions/{session_id}`
+
+Devuelve el resumen de la sesión que la página usa para pintar el monto, la moneda y el `payment_id` original.
+
+### `POST /payment-sessions/{session_id}/confirm`
+
+Recibe los datos ingresados por el usuario en la página de checkout y dispara el mismo flujo asíncrono que `POST /payments`.
+
+### Body de confirmación
+
+```json
+{
+	"customer_email": "cliente@correo.com"
+}
+```
+
+### Respuesta
+
+La respuesta es la misma estructura de `POST /payments`, por lo que el `payment_id` viaja intacto desde la sesión hasta el webhook.
