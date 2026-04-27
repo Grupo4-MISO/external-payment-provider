@@ -236,6 +236,12 @@ async def _send_webhook_with_retries(
         headers["X-Webhook-Timestamp"] = timestamp
         headers["X-Webhook-Signature"] = signature
 
+    # Print del payload que se envía al webhook
+    print("\n=== WEBHOOK A ENVIAR ===")
+    print(f"URL: {webhook_url}")
+    print(f"Payload:\n{json.dumps(json.loads(payload_json), indent=2)}")
+    print("=" * 30)
+
     timeout = httpx.Timeout(10.0)
 
     async with httpx.AsyncClient(timeout=timeout) as client:
