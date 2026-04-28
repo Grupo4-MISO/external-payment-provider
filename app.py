@@ -363,12 +363,30 @@ async def get_checkout_page(session_id: str) -> HTMLResponse:
         label {{ display: block; margin-bottom: 6px; font-weight: 600; }}
         input {{ width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid #d0d5dd; border-radius: 10px; }}
         button {{ width: 100%; margin-top: 16px; padding: 12px 14px; border: 0; border-radius: 10px; background: #155eef; color: white; font-weight: 700; cursor: pointer; }}
-        button:disabled {{ background: #9bb8ff; cursor: wait; }}
+        button:disabled {{ background: #9bb8ff; cursor: disabled; }}
         .status {{ margin-top: 16px; font-size: 0.95rem; }}
-    </style>
+          .hidden {{ display: none; }}
+          .form-section {{ display: block; }}
+          .result-section {{ display: none; text-align: center; }}
+          .result-section.show {{ display: block; }}
+          .result-icon {{ font-size: 3rem; margin: 16px 0; }}
+          .result-icon.success {{ color: #17b26a; }}
+          .result-icon.error {{ color: #f04438; }}
+          .result-title {{ font-size: 1.5rem; font-weight: 700; margin: 12px 0; }}
+          .result-message {{ color: #667085; margin-bottom: 20px; line-height: 1.5; }}
+          .result-details {{ background: #f9fafb; border-radius: 10px; padding: 16px; text-align: left; margin: 16px 0; }}
+          .result-details .detail-row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }}
+          .result-details .detail-row:last-child {{ border-bottom: none; }}
+          .detail-label {{ font-weight: 600; color: #667085; }}
+          .detail-value {{ color: #162033; word-break: break-all; }}
+          .error-text {{ color: #f04438; }}
+          .success-text {{ color: #17b26a; }}
+     </style>
 </head>
 <body>
     <main class="card">
+        <!-- FORM SECTION -->
+        <div class="form-section" id="formSection">
         <p class="muted">Checkout simulado</p>
         <h1>Confirma tu pago</h1>
         <div class="row" id="summary">Cargando resumen...</div>
@@ -378,12 +396,27 @@ async def get_checkout_page(session_id: str) -> HTMLResponse:
         </div>
         <button id="pay_button" type="button">Pagar</button>
         <div class="status" id="status"></div>
+        </div>
+
+        <!-- RESULT SECTION -->
+        <div class="result-section" id="resultSection">
+            <div class="result-icon" id="resultIcon"></div>
+            <h1 class="result-title" id="resultTitle"></h1>
+            <p class="result-message" id="resultMessage"></p>
+            <div class="result-details" id="resultDetails"></div>
+        </div>
     </main>
     <script>
         const sessionId = {json.dumps(session_id)};
         const summary = document.getElementById('summary');
         const statusBox = document.getElementById('status');
         const payButton = document.getElementById('pay_button');
+        const formSection = document.getElementById('formSection');
+        const resultSection = document.getElementById('resultSection');
+        const resultIcon = document.getElementById('resultIcon');
+        const resultTitle = document.getElementById('resultTitle');
+        const resultMessage = document.getElementById('resultMessage');
+        const resultDetails = document.getElementById('resultDetails');
 
         async function loadSession() {{
             const response = await fetch(`/payment-sessions/${{sessionId}}`);
@@ -400,30 +433,80 @@ async def get_checkout_page(session_id: str) -> HTMLResponse:
             `;
         }}
 
+        function showResult(isSuccess, paymentData, errorMessage = null) {{
+            formSection.classList.add('hidden');
+            resultSection.classList.add('show');
+
+            if (isSuccess) {{
+                resultIcon.innerHTML = '✓';
+                resultIcon.classList.add('success');
+                resultTitle.innerHTML = '¡Pago procesado!';
+                resultTitle.classList.add('success-text');
+                resultMessage.innerHTML = 'Tu pago ha sido aceptado y se está procesando.';
+
+                resultDetails.innerHTML = `
+                    <div class="detail-row">
+                        <span class="detail-label">Estado:</span>
+                        <span class="detail-value success-text"><strong>Processing</strong></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Payment ID:</span>
+                        <span class="detail-value">${{paymentData.payment_id}}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">External Payment ID:</span>
+                        <span class="detail-value"><strong>${{paymentData.external_payment_id}}</strong></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Procesará en:</span>
+                        <span class="detail-value">${{paymentData.callback_delay_seconds}} segundos</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Recibido:</span>
+                        <span class="detail-value">${{new Date(paymentData.received_at).toLocaleString('es-CO')}}</span>
+                    </div>
+                `;
+            }} else {{
+                resultIcon.innerHTML = '✕';
+                resultIcon.classList.add('error');
+                resultTitle.innerHTML = 'Error al procesar';
+                resultTitle.classList.add('error-text');
+                resultMessage.innerHTML = errorMessage || 'No fue posible procesar el pago. Por favor intenta nuevamente.';
+                resultDetails.innerHTML = '';
+            }}
+        }}
+
         payButton.addEventListener('click', async () => {{
             const customerEmail = document.getElementById('customer_email').value.trim();
             if (!customerEmail) {{
                 statusBox.textContent = 'Ingresa un correo electrónico.';
+                statusBox.classList.add('error-text');
                 return;
             }}
 
             payButton.disabled = true;
             statusBox.textContent = 'Procesando pago...';
+            statusBox.classList.remove('error-text');
 
-            const response = await fetch(`/payment-sessions/${{sessionId}}/confirm`, {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ customer_email: customerEmail }})
-            }});
+            try {{
+                const response = await fetch(`/payment-sessions/${{sessionId}}/confirm`, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ customer_email: customerEmail }})
+                }});
 
-            const data = await response.json();
-            if (!response.ok) {{
-                statusBox.textContent = data.detail ?? 'No fue posible procesar el pago.';
+                const data = await response.json();
+                if (!response.ok) {{
+                    showResult(false, null, data.detail ?? 'No fue posible procesar el pago.');
+                    payButton.disabled = false;
+                    return;
+                }}
+
+                showResult(true, data);
+            }} catch (error) {{
+                showResult(false, null, 'Error de conexión. Por favor intenta nuevamente.');
                 payButton.disabled = false;
-                return;
             }}
-
-            statusBox.textContent = `Pago aceptado. External payment ID: ${{data.external_payment_id}}`;
         }});
 
         loadSession();
